@@ -1,0 +1,297 @@
+Binary files tbit-1.0/.base.h.swp and tbit-1.0.fixed/.base.h.swp differ
+diff -Nur tbit-1.0/Makefile tbit-1.0.fixed/Makefile
+--- tbit-1.0/Makefile	2004-05-27 19:31:23.000000000 +0100
++++ tbit-1.0.fixed/Makefile	2005-10-03 17:34:52.000000000 +0100
+@@ -90,10 +90,10 @@
+ LIBPCAP = ./libpcap-0.4
+ CC = gcc 
+ OBJS = version.o $(SRC:.c=.o)
+-INCLS = -I. -I$(LIBPCAP)
+-DEFS = -DRETSIGTYPE=void -DHAVE_SIGACTION=1 
++INCLS = -I.
++DEFS = -DRETSIGTYPE=void -DHAVE_SIGACTION=1  -DTIME_WITH_SYS_TIME=1
+ CFLAGS =  -g -Wall $(CCOPT) $(DEFS) $(INCLS)
+-LIBS = -lm $(LIBPCAP)/libpcap.a
++LIBS = -lm -lpcap
+ 
+ all: tbit 
+ 
+@@ -110,5 +110,8 @@
+ 	@rm -f $@
+ 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
+ 
++clean:
++	-rm -f $(OBJS) tbit
++
+ depend:
+ 	mkdep ${CFLAGS} ${SRC}
+diff -Nur tbit-1.0/base.h tbit-1.0.fixed/base.h
+--- tbit-1.0/base.h	2004-05-27 19:31:23.000000000 +0100
++++ tbit-1.0.fixed/base.h	2005-10-03 17:21:09.000000000 +0100
+@@ -61,7 +61,7 @@
+ struct udphdr {char x[20];};
+ struct icmphdr {char x[20];};
+ #include <linux/if.h>
+-#include <linux/ip_fw.h>
++//#include <linux/ip_fw.h>
+ #endif /* linux */
+ #include <netdb.h>
+ #include <string.h>
+diff -Nur tbit-1.0/capture.c tbit-1.0.fixed/capture.c
+--- tbit-1.0/capture.c	2004-05-27 19:31:23.000000000 +0100
++++ tbit-1.0.fixed/capture.c	2005-10-03 17:35:15.000000000 +0100
+@@ -45,6 +45,8 @@
+ #include <sys/time.h>
+ #include <string.h>
+ #include <stdio.h>
++#include <unistd.h>
++#include <stdlib.h>
+ #include "gmt2local.h"
+ #include "pcap.h"
+ #include "inet.h"
+diff -Nur tbit-1.0/gnuc.h tbit-1.0.fixed/gnuc.h
+--- tbit-1.0/gnuc.h	1970-01-01 01:00:00.000000000 +0100
++++ tbit-1.0.fixed/gnuc.h	2005-10-03 17:23:19.000000000 +0100
+@@ -0,0 +1,43 @@
++/* @(#) $Header: gnuc.h,v 1.3 95/10/09 02:47:01 leres Exp $ (LBL) */
++
++/* Define __P() macro, if necessary */
++#ifndef __P
++#if __STDC__
++#define __P(protos) protos
++#else
++#define __P(protos) ()
++#endif
++#endif
++
++/* inline foo */
++#ifdef __GNUC__
++#define inline __inline
++#else
++#define inline
++#endif
++
++/*
++ * Handle new and old "dead" routine prototypes
++ *
++ * For example:
++ *
++ *	__dead void foo(void) __attribute__((volatile));
++ *
++ */
++#ifdef __GNUC__
++#ifndef __dead
++#define __dead volatile
++#endif
++#if __GNUC__ < 2  || (__GNUC__ == 2 && __GNUC_MINOR__ < 5)
++#ifndef __attribute__
++#define __attribute__(args)
++#endif
++#endif
++#else
++#ifndef __dead
++#define __dead
++#endif
++#ifndef __attribute__
++#define __attribute__(args)
++#endif
++#endif
+diff -Nur tbit-1.0/loss_rate.c tbit-1.0.fixed/loss_rate.c
+--- tbit-1.0/loss_rate.c	2004-05-27 19:31:23.000000000 +0100
++++ tbit-1.0.fixed/loss_rate.c	2005-10-03 17:37:47.000000000 +0100
+@@ -98,7 +98,7 @@
+   uint32 seq = history[session.hsz - 1].seqno;
+   uint8  fin = history[session.hsz - 1].fin;
+   uint16 datalen = history[session.hsz - 1].dlen;
+-  char  *dataptr = history[session.hsz - 1].data;
++  uint8 *dataptr = history[session.hsz - 1].data;
+   int i; 
+   struct IPPacket ackpkt; 
+   int dropForLossRateTest = 0; 
+@@ -110,7 +110,7 @@
+   static int *rcvd_pkt_num = NULL;
+ 
+   if (rcvd_pkt_num == NULL) {
+-    rcvd_pkt_num = (uint32 *)calloc(session.maxpkts, sizeof(int));
++    rcvd_pkt_num = calloc(session.maxpkts, sizeof(int));
+   }
+   assert(rcvd_pkt_num != NULL);
+ 
+@@ -198,7 +198,7 @@
+ 
+   if (loss_prob < session.loss_rate) {
+     dropForLossRateTest = 1;
+-    printf ("##### droppacket %f %d %d\n", 
++    printf ("##### droppacket %f %d %d %d\n", 
+ 	    GetTime() - session.epochTime, 
+ 	    seq - session.irs, 
+ 	    seq - session.irs + datalen,
+diff -Nur tbit-1.0/reno.c tbit-1.0.fixed/reno.c
+--- tbit-1.0/reno.c	2004-05-27 19:31:23.000000000 +0100
++++ tbit-1.0.fixed/reno.c	2005-10-03 17:34:05.000000000 +0100
+@@ -116,7 +116,7 @@
+   uint32 seq = history[session.hsz - 1].seqno;
+   uint8  fin = history[session.hsz - 1].fin;
+   uint16 datalen = history[session.hsz - 1].dlen;
+-  char  *dataptr = history[session.hsz - 1].data;
++  uint8  *dataptr = history[session.hsz - 1].data;
+   int i, out_of_order = 0; 
+   struct IPPacket *ackpkt; 
+   int dropForRenoTest = 0; 
+@@ -130,7 +130,7 @@
+   static int *rcvd_pkt_num = NULL;
+ 
+   if (rcvd_pkt_num == NULL) {
+-    rcvd_pkt_num = (uint32 *)calloc(session.maxpkts, sizeof(int));
++    rcvd_pkt_num = calloc(session.maxpkts, sizeof(int));
+   }
+   assert(rcvd_pkt_num != NULL);
+ 
+diff -Nur tbit-1.0/sack_sndr_3p.c tbit-1.0.fixed/sack_sndr_3p.c
+--- tbit-1.0/sack_sndr_3p.c	2004-05-27 19:31:23.000000000 +0100
++++ tbit-1.0.fixed/sack_sndr_3p.c	2005-10-03 17:36:59.000000000 +0100
+@@ -153,7 +153,7 @@
+   // Keep track of seqno vs. pkt_num received
+   static int *rcvd_pkt_num;
+ 
+-  rcvd_pkt_num = (uint32 *)calloc(session.maxpkts, sizeof(int));
++  rcvd_pkt_num = calloc(session.maxpkts, sizeof(int));
+   assert(rcvd_pkt_num != NULL);
+   
+   opt = NULL;
+@@ -484,7 +484,7 @@
+   int sack = 1;	
+   int i, j;	
+   double start = 0; 
+-  double end = 999999999999999;
++  double end = 999999999999999.0;
+   uint32 rxmt[MAXRXMT];
+   int numRxmt = 0;
+ 
+diff -Nur tbit-1.0/session.c tbit-1.0.fixed/session.c
+--- tbit-1.0/session.c	2004-05-27 19:31:23.000000000 +0100
++++ tbit-1.0.fixed/session.c	2005-10-03 17:32:59.000000000 +0100
+@@ -556,7 +556,7 @@
+   }
+ 
+   icmpsz = sizeof(struct ICMPUnreachableErrorPacket);
+-  if (((char *)icmp_pkt = (char *)calloc(icmpsz + 1, 1)) == NULL) {
++  if ((icmp_pkt = calloc(icmpsz + 1, 1)) == NULL) {
+     perror("ERROR: no space for ICMP packet:");
+     Quit(ERR_MEM_ALLOC) ; 
+   }
+@@ -576,7 +576,7 @@
+   icmp_pkt->ip.ip_len  = (uint16)(sizeof(struct ICMPUnreachableErrorPacket));
+ #else /* __FreeBSD__ */
+   icmp_pkt->ip.ip_off  = htons(IP_DF);
+-  icmp_pkt->ip.p_len   = htons((uint16)((sizeof (struct ICMPUnreachableErrorPacket) + 8 + 1)));
++  icmp_pkt->ip.ip_len   = htons((uint16)((sizeof (struct ICMPUnreachableErrorPacket) + 8 + 1)));
+ #endif /* __FreeBSD__ */
+ 
+   /* Fill ICMP header */
+diff -Nur tbit-1.0/session.h tbit-1.0.fixed/session.h
+--- tbit-1.0/session.h	2004-05-27 19:31:23.000000000 +0100
++++ tbit-1.0.fixed/session.h	2005-10-03 17:31:50.000000000 +0100
+@@ -82,7 +82,7 @@
+   double start_time;
+ 
+   /* data buffer */
+-  char *dataRcvd ;
++  unsigned char *dataRcvd ;
+ 	
+   /* basic results */
+   int totSent; 
+diff -Nur tbit-1.0/support.c tbit-1.0.fixed/support.c
+--- tbit-1.0/support.c	2004-05-27 19:31:23.000000000 +0100
++++ tbit-1.0.fixed/support.c	2005-10-03 17:44:40.000000000 +0100
+@@ -48,15 +48,10 @@
+ #include "tbit.h"
+ #include "reno.h"
+ 
++#include <sys/time.h>
++#include <time.h>
+ extern struct TcpSession session; 
+ 
+-#ifdef __FreeBSD__
+-struct ip_fw firewallRule;
+-#endif /* __FreeBSD__ */
+-#ifdef linux
+-struct ip_fwchange firewallRule;
+-#endif /* linux */
+-
+ void SendReset()
+ {
+   struct IPPacket *p;
+@@ -112,10 +107,15 @@
+   if (session.initFirewall > 0) {
+     
+ #ifdef linux
+-#define IP_FW_DEL	(IP_FW_DELETE)
+-#endif /* linux */
+-
++  snprintf(ipfw_rule, sizeof(ipfw_rule),
++		  "iptables -D INPUT -p tcp"
++		  " --src %s --sport %d "
++		  " -j DROP",
++		  InetAddress(session.dst),
++		  session.dport);
++#else
+     sprintf(ipfw_rule, "ipfw del 00%d", session.firewall_rule_number); 
++#endif
+     r = system(ipfw_rule);
+ 
+   }
+@@ -244,12 +244,10 @@
+ 
+   char ipfw_rule[100];
+   int r; 
+-  double f;
+-
+-  memset(&firewallRule, 0, sizeof(firewallRule));
+ 
+ 
+ #ifdef __FreeBSD__
++  double f;
+   
+ 
+   /*
+@@ -273,25 +271,22 @@
+   printf("----------------------\n");
+   sprintf(ipfw_rule, "ipfw list");
+   r = system(ipfw_rule);
++  printf("\n-----------------------\n");
+ 
+ #else
+ 
+-  memcpy(firewallRule.fwc_label, IP_FW_LABEL_INPUT, sizeof(firewallRule.fwc_label));
+-  memcpy(firewallRule.fwc_rule.label, IP_FW_LABEL_BLOCK, sizeof(firewallRule.fwc_label)); 
+-  firewallRule.fwc_rule.ipfw.fw_proto = IPPROTO_TCP;
+-
+-  firewallRule.fwc_rule.ipfw.fw_src.s_addr = session.dst;
+-  firewallRule.fwc_rule.ipfw.fw_smsk.s_addr = htonl(~0); 
+-  firewallRule.fwc_rule.ipfw.fw_spts[0] = session.dport;
+-  firewallRule.fwc_rule.ipfw.fw_spts[1] = session.dport;
+-  firewallRule.fwc_rule.ipfw.fw_dst.s_addr = session.src;
+-  firewallRule.fwc_rule.ipfw.fw_dmsk.s_addr = htonl(~0); 
+-  firewallRule.fwc_rule.ipfw.fw_dpts[0] = session.sport;
+-  firewallRule.fwc_rule.ipfw.fw_dpts[1] = session.sport;
+-  if (setsockopt(session.socket, IPPROTO_IP, IP_FW_APPEND, &firewallRule, sizeof(firewallRule)) != 0) {
+-    printf("ERROR: couldn't block kernel TCP for %s:%d\n", InetAddress(session.dst), session.dport);
+-    Quit(FIREWALL_ERR);
+-  }
++  snprintf(ipfw_rule, sizeof(ipfw_rule),
++		  "iptables -A INPUT -p tcp"
++		  " --src %s --sport %d "
++		  " -j DROP",
++		  InetAddress(session.dst),
++		  session.dport);
++  r = system(ipfw_rule);
++
++  printf("\nCurrent firewall rules:");
++  printf("\n-----------------------\n");
++  r = system("iptables -nvL");
++  printf("\n-----------------------\n");
+ #endif  /* __FreeBSD__ */
+ 
+   session.initFirewall=1;
+

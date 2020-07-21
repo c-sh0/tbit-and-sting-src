@@ -1,0 +1,192 @@
+Hi folks,
+
+This directory contains source code for the first alpha release of
+sting, which is a TCP-based network measurement tool.  Its ugly,
+kludgey, code only a grad student could love... but it works :-) 
+
+In this first release, sting estimates one-way packet loss rates
+basically as described in the 1999 USITS paper, "Sting: a TCP-based
+Network Measurement Tool" available off my Web page
+(http://www.cs.washington.edu/homes/savage/).  We are actively looking
+at providing some other measurement services (propagation delay,
+one-way queuing delay and one-way bottleneck bandwidths) in future
+releases. 
+
+This code base was largely developed and tested on FreeBSD (although
+I've only tried it on FreeBSD 3.1).  I've recently (last night) ported
+the code to a modern version of Linux (whatever comes in RH6.0) and it
+seems to work.
+
+
+GETTING STARTED
+---------------
+To compile and run sting, you'll need three things:
+
+  1) a compiled version of McCanne, Leres and Jacobson's libpcap library
+    (I've included the version of this distribution I've used, but the
+    most up-to-date version can be found at
+    ftp://ftp.ee.lbl.gov.libpcap.tar.Z)
+
+  Either: 
+
+  2a) a FreeBSD kernel compiled with support for BPF and firewalls.  I
+      suggest compiling a kernel with the following options in your config
+      file:
+
+      options         IPFIREWALL                   #firewall
+      options         IPFIREWALL_DEFAULT_TO_ACCEPT #allow everything by default
+      options         NMBCLUSTERS=8192
+
+      pseudo-device   bpfilter 16                  #Berkeley packet filter
+
+  or
+
+  2b) or a modern Linux kernel compiled with support for firewalls.  I 
+      don't know Linux well enough to tell you how to do this.
+      However, if /sbin/ipchains -L doesn't give you a nice message
+      then your kernel probably isn't right.  Find a penguin person.  
+
+  3) A root shell.  sting must be run by root or suid root because it
+     writes raw sockets, installs firewall filters and packet filters.
+
+     (Note: sting has not been checked for potential security exploits
+      such as buffer overflow attacks, so should probably not be made
+      available suid in an untrusted environment).
+
+USING STING
+-----------
+The basic syntax is pretty simple:
+
+sting [-p port] [-c count] [-f distribution] [-m mean] [-v] targethost
+
+where port refers to a particular TCP port on the target host, count
+is the number of packets to send, distribution is one of
+"exponential", "uniform", or "periodic" and refers to the
+distribution used to generate the spacing between packets, and mean
+specifies the mean of the distribution (or in the case of the periodic
+distribution, the period).  The -v flag specifies verbose mode which
+prints additional information (including feedback about progress). 
+
+If no options are specified, sting defaults to sending 100 packets of
+41 bytes each (1 data byte and 40 bytes of TCP/IP headers) to port 80
+(http), spaced according to a uniform distribution with a mean of 0.1
+seconds (100ms). 
+
+QUICK TIP:  For testing Windows clients try using port 139 (netbios)
+
+
+Here is the output from a sample session:
+
+[savage1]# ./sting www.cnn.com
+Connection setup took 80 ms
+src = 128.95.219.227:10241 (1753156211)
+dst = 207.25.71.25:80 (347132509)
+dataSent = 100, dataReceived = 100
+acksSent = 100, acksReceived = 100
+Forward loss rate = 0.000000
+Reverse loss rate = 0.000000
+634 packets received by filter
+0 packets dropped by kernel
+
+The "Forward loss rate" refers to the one-way loss rate on the path
+from the client machine (in this case savage1) TO the target machine
+(www.cnn.com).  The "Reverse loss rate" refers to the one-way loss
+rate on the path from the target machine BACK to the client machine.
+In this example, no packets have been lost.
+
+(Note that the number 634 packets received by filter is wrong and
+reflects some confusion in FreeBSD's packet filter machinery)
+
+LICENSING & LIABILITY
+--------------------------
+sting is being released under a BSD-style license and therefore can be
+used for any and all purposes by any and all comers, the only
+restriction being that the copyright information must be maintained
+and credit provided to the contributors.
+
+Going along with that is the abdication of all liability on my part,
+on the university's part, and on the part of any and all external
+contributors.  The legalese is in the source files for you to read but
+in my mind it roughly translates to:  
+
+"Look, this code was written in the wee hours of the night by
+a financially un-compensated grad student who should have been working
+on his thesis and whose last awarded degree was in History, so its
+your own fault if you depend on this software to do what is claimed,
+let alone work, without verifying it yourself and certainly don't
+blame us if it doesn't.  So there."   
+
+That being said, if you do use this code and find problems or make
+improvements PLEASE send them back to me so I can improve
+sting for later releases.  If you experience problems, please specify
+the operating system you're using, the DNS name and IP address of the
+target host, how sting failed, and (ideally) a tcpdump trace of the
+complete conversation between the host pairs.  If you're _seriously_
+considering adding services or doing a port, please send me a note so
+I can coordinate and avoid the duplication of effort.
+
+
+Have fun, and be careful out there.
+
+
+- Stefan
+
+savage@cs.washington.edu
+http://www.cs.washington.edu/homes/savage
+
+
+SPECIAL THANKS
+--------------
+To Lawrence Berkeley Labs and the various folks who worked on libpcap
+(which we use) and tcpdump (from which we've borrowed a few files:
+gmt2local.c, gmt2local.h, setsignal.c, setsignal.h).  Also thanks to
+the Internet Society and the authors of RFC 2330, from which the
+contents of the files distribution.c and distribution.h were taken.
+
+Thanks to Neal Cardwell, David Wetherall and Tom Anderson, who all
+provided feedback and encouragement to make sting actually happen.
+
+Finally, a very special thanks to USENIX which has provided funding for
+some of my work in this area (via the Student Research Grants program).
+
+
+KNOWN ISSUES
+------------
+- Packet sizing does not work reliably in this release.  The algorithm
+  described for sequence number overlapping in the USITS paper is buggy
+  and we have removed it.  The current release sends packets
+  back-to-back and can quickly overwhelm remote receiver buffers.  We have 
+  an alternative algorithm that does work, albeit with only modest
+  improvements in buffer reduction (2x), but it isn't fully 
+  implemented and tested yet.  In the interim, either stick with the
+  default size of 41 bytes, or reduce the number of packets sent (-c)
+  per round when you encounter problems with larger packets.
+
+- Some web servers will issue a reset if connect() or read() times out
+  thereby preventing sting from collecting a complete reading.  sting
+  will report when this happens, however for machines with short
+  duration timeouts this can be problematic.  We have developed a
+  potential fix, but it isn't yet implemented because its pretty ugly.
+  For the interim, either send a smaller number of packets per trial or
+  reduce the inter-arrival time mean to reduce the overall time of a
+  sting measurement. 
+
+- Some embedded devices do not support fast retransmit or cannot handle
+  large numbers of our-of-order data packets.  Please be careful because
+  some of these devices will crash under some of sting's inputs.
+
+- The finger service of a... ahem... popular router vendor does not
+  depend on user input and simply sends its data and performs an
+  abortive close.  This service therefore cannot be used by sting.  
+
+- At least one (very old) version of MacOS appears to not acknowledge
+  out-of-order packets.
+
+- If, somehow, you have an older version of sting that does not use
+  the firewall interface, you should upgrade ASAP.  If your
+  kernel is not appropriately modified you can easily desynchronize the
+  TCP connection between the target host and your kernel, leading to
+  "ack-storms" that can overwhelm short-RTT paths.
+
+
+
